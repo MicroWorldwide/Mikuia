@@ -27,7 +27,7 @@ class exports.Chat
 				exitOnError: true
 			connection:
 				reconnect: true
-				retries: 3
+				retries: -1
 				serverType: 'chat'
 				preferredServer: @Mikuia.settings.bot.server
 			identity:
@@ -43,6 +43,7 @@ class exports.Chat
 			@Mikuia.Log.info cli.magenta('Twitch') + ' / ' + cli.whiteBright('Connected to Twitch IRC (' + cli.yellowBright(address + ':' + port) + cli.whiteBright(')'))
 			@Mikuia.Events.emit 'twitch.connected'
 			@connected = true
+			@update()
 
 		@client.addListener 'disconnected', (reason) =>
 			@Mikuia.Log.fatal cli.magenta('Twitch') + ' / ' + cli.whiteBright('Disconnected from Twitch IRC. Reason: ' + reason)
@@ -55,11 +56,11 @@ class exports.Chat
 					Channel.isSupporter defer err, isSupporter
 
 				if isSupporter
-					channelLimiter[Channel.getName()] = new RateLimiter 3, 10000
-					rateLimitingProfile = cli.redBright 'Supporter (3 per 10s)'
+					channelLimiter[Channel.getName()] = new RateLimiter 4, 30000
+					rateLimitingProfile = cli.redBright 'Supporter (4 per 30s)'
 				else
-					channelLimiter[Channel.getName()] = new RateLimiter 2, 10000
-					rateLimitingProfile = cli.greenBright 'Free (2 per 10s)'
+					channelLimiter[Channel.getName()] = new RateLimiter 3, 30000
+					rateLimitingProfile = cli.greenBright 'Free (3 per 30s)'
 
 				@Mikuia.Log.info cli.cyan(displayName) + ' / ' + cli.whiteBright('Joined the IRC channel. Rate Limiting Profile: ') + rateLimitingProfile
 
@@ -106,6 +107,14 @@ class exports.Chat
 		tokens = message.split ' '
 		trigger = tokens[0]
 
+		inChatters = false
+		for categoryName, category of @getChatters Channel.getName()
+			if category.indexOf(user.username) > -1
+				inChatters = true
+		if !inChatters
+			@chatters[Channel.getName()] ?= { viewers: [] }
+			@chatters[Channel.getName()].viewers.push user.username
+
 		await Channel.queryCommand trigger, user, defer err, o
 		{command, settings, isAllowed} = o
 
@@ -117,8 +126,14 @@ class exports.Chat
 
 		if !err && enabled
 			if settings?._coinCost and settings._coinCost > 0
-				await Mikuia.Database.zincrby "channel:#{Channel.getName()}:coins", -settings._coinCost, user.username, defer error, whatever
+				User = new Mikuia.Models.Channel user.username
 
+				await Mikuia.Database.zscore  "channel:#{Channel.getName()}:coins", User.getName(), defer whatever, coinBalance
+				if parseInt(coinBalance) >= settings._coinCost
+					await Mikuia.Database.zincrby "channel:#{Channel.getName()}:coins", -settings._coinCost, user.username, defer error, whatever
+				else
+					return
+					
 			@Mikuia.Events.emit command, {user, to, message, tokens, settings}
 			Channel.trackIncrement 'commands', 1
 
@@ -141,10 +156,10 @@ class exports.Chat
 		for channel, i in channels
 			await @join channel, defer whatever
 
+		callback false
+
 		for channel in channels
 			await @updateChatters channel, defer whatever
-
-		callback false
 
 	mods: (channel) =>
 		channel = channel.replace('#', '')
@@ -186,14 +201,16 @@ class exports.Chat
 	update: =>
 		twitchFailure = false
 
+		await @Mikuia.Chat.joinMultiple @Mikuia.settings.bot.autojoin, defer whatever
 		await @Mikuia.Database.smembers 'mikuia:channels', defer err, channels
 		if err then @Mikuia.Log.error err else
 			chunks = @Mikuia.Tools.chunkArray channels, 100
-			joinList = @Mikuia.settings.bot.autojoin
 			streamData = {}
 			streamList = []
+
 			for chunk, i in chunks
 				if chunk.length > 0
+					joinList = []
 					@Mikuia.Log.info cli.magenta('Twitch') + ' / ' + cli.whiteBright('Checking channels live... (' + (i + 1) + '/' + chunks.length + ')')
 					await @Mikuia.Twitch.getStreams chunk, defer err, streams
 					if err
@@ -217,7 +234,7 @@ class exports.Chat
 								Channel.trackValue 'supporterValue', Math.floor(Math.random() * 10000)
 
 						@Mikuia.Log.info cli.magenta('Twitch') + ' / ' + cli.whiteBright('Obtained live channels... (' + chunkList.length + ')')
-			await @Mikuia.Chat.joinMultiple joinList, defer uselessfulness
+						await @Mikuia.Chat.joinMultiple joinList, defer uselessfulness
 
 			# Yay, save dat stuff.
 			if !twitchFailure

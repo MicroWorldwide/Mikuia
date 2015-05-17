@@ -60,9 +60,9 @@ Mikuia.Settings.read ->
 			isBot = true
 		when 'web'
 			isWeb = true
-		# else
-		# 	flipOut()
-
+		else
+			isBot = true
+			
 	# Let's load plugins.
 	fs.readdir 'plugins', (pluginDirErr, fileList) ->
 		if pluginDirErr
@@ -79,7 +79,6 @@ Mikuia.Settings.read ->
 	if isBot
 		Mikuia.Chat.connect()
 		Mikuia.Twitch.init()
-		Mikuia.Chat.update()
 
 		if Mikuia.settings.sentry.enable
 			raven = require 'raven'
