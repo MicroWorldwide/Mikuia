@@ -4,6 +4,10 @@ body.mikuia {
 	background-repeat: no-repeat;
 }
 
+.alert {
+	word-wrap: break-word;
+}
+
 .align-center {
 	text-align: center;
 }
@@ -157,6 +161,22 @@ body.mikuia {
 	margin-top: 14px;
 }
 
+.infobox-slack {
+	background-image: url('/img/slack.png');
+	background-position: 100% -10px;
+	background-repeat: no-repeat;
+	height: 100%;
+	text-shadow: 0px 0px 10px #999;
+}
+
+.infobox-slack a {
+	color: white;
+}
+
+.label {
+	line-height: 1.5;
+}
+
 .level {
 	border: 2px solid #999;
 	border-radius: 16px;
@@ -281,6 +301,76 @@ body.page-sidebar-closed > .navbar > .page-header-inner > .page-logo > a {
 	max-height: 21em;
 }
 
+.stream-flag {
+	padding: 5px;
+}
+
 .weight-500 {
 	font-weight: 500;
+}
+
+/* Animations */
+
+.animation-fade-in-down {
+	animation-duration: 1000ms;
+	animation-fill-mode: forwards;
+	animation-name: fade-in-down;
+	animation-timing-function: cubic-bezier(0.19, 1, 0.2, 1);
+}
+
+.animation-fade-in-left {
+	animation-duration: 1000ms;
+	animation-fill-mode: forwards;
+	animation-name: fade-in-left;
+	animation-timing-function: cubic-bezier(0.19, 1, 0.2, 1);
+}
+
+.animation-fade-in-right {
+	animation-duration: 1000ms;
+	animation-fill-mode: forwards;
+	animation-name: fade-in-right;
+	animation-timing-function: cubic-bezier(0.19, 1, 0.2, 1);
+}
+
+.animation-fade-in-up {
+	animation-duration: 1000ms;
+	animation-fill-mode: forwards;
+	animation-name: fade-in-up;
+	animation-timing-function: cubic-bezier(0.19, 1, 0.2, 1);
+}
+
+@keyframes fade-in-down {
+	from {
+		opacity: 0;
+		transform: translate3d(0px, -50px, 0);
+	} to {
+		opacity: 1;
+	}
+}
+
+@keyframes fade-in-left {
+	from {
+		opacity: 0;
+		transform: translate3d(50px, 0, 0);
+	} to {
+		opacity: 1;
+	}
+}
+
+@keyframes fade-in-right {
+	from {
+		opacity: 0;
+		transform: translate3d(-50px, 0, 0);
+	} to {
+		opacity: 1;
+	}
+}
+
+@keyframes fade-in-up {
+	from {
+		opacity: 0;
+		transform: translate3d(0, 50px, 0);
+	} to {
+		opacity: 1;
+	}
 }

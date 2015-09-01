@@ -5,7 +5,6 @@ net = require 'net'
 request = require 'request'
 RateLimiter = require('limiter').RateLimiter
 
-apiLimiter = new RateLimiter 180, 60000
 banchoLimiter = new RateLimiter 1, 'second'
 limits = {}
 userBest = {}
@@ -74,7 +73,7 @@ checkForRequest = (user, Channel, message) =>
 	continueCheck = true
 	await Channel.getSetting 'osu', 'requestSubMode', defer err, requestSubMode
 	if !err && requestSubMode
-		if user.special.indexOf('subscriber') == -1
+		if user.subscriber
 			continueCheck = false
 
 	await Channel.getSetting 'osu', 'requestUserLimit', defer err, requestUserLimit
@@ -309,21 +308,30 @@ checkRankUpdates = (stream, callback) =>
 					callback false, null
 
 makeAPIRequest = (link, callback) =>
-	apiLimiter.removeTokens 1, (err, rr) =>
-		request 'https://osu.ppy.sh/api' + link + '&k=' + @Plugin.getSetting('apiKey'), (error, response, body) ->
-			if !error && response.statusCode == 200
-				data = {}
-				try
-					data = JSON.parse body
-				catch e
-					console.log e
-				callback false, data
-			else
-				callback true, null
+	start = process.hrtime()
+	request 'https://osu.ppy.sh/api' + link + '&k=' + @Plugin.getSetting('apiKey'), (error, response, body) ->
+		responseTime = parseInt(process.hrtime(start)[1] / 10000000, 10)
+
+		if !error && response.statusCode == 200
+			Mikuia.Events.emit 'osu.api.request', responseTime
+
+			data = {}
+			try
+				data = JSON.parse body
+			catch e
+				console.log e
+			callback false, data
+		else
+			callback true, null
 
 makeTillerinoRequest = (beatmap_id, mods, callback) =>
+	start = process.hrtime()
 	request 'http://bot.tillerino.org:1666/beatmapinfo?k=' + @Plugin.getSetting('tillerinoKey') + '&wait=2000&beatmapid=' + beatmap_id + '&mods=' + mods, (error, response, body) ->
+		responseTime = parseInt(process.hrtime(start)[1] / 10000000, 10)
+		
 		if !error && response.statusCode == 200
+			Mikuia.Events.emit 'osu.tillerino.request', responseTime
+
 			data = {}
 			try
 				data = JSON.parse body
@@ -522,17 +530,21 @@ Mikuia.Events.on 'twitch.connected', =>
 				trigger = tokens[0].replace '!', ''
 				
 				if trigger in twitchCommands
-					await
-						Mikuia.Database.hget 'plugin:osu:channels', message.from, defer err, name
 					
-					Channel = new Mikuia.Models.Channel name
-					await Channel.isSupporter defer err, isSupporter
+					await Mikuia.Database.hget 'plugin:osu:channels', message.from, defer err, name
 
 					if name?
-						if isSupporter
-							Mikuia.Chat.say name, message.message.replace '!', '.'
-						else
-							banchoSay message.from, 'This feature is available only for Mikuia Supporters.'
+						Channel = new Mikuia.Models.Channel name
+
+						await
+							Channel.getSetting 'osu', 'name', defer err, osuName
+							Channel.isSupporter defer err, isSupporter
+
+						if osuName == message.from
+							if isSupporter
+								Mikuia.Chat.sayUnfiltered name, message.message.split('!').join('.')
+							else
+								banchoSay message.from, 'This feature is available only for Mikuia Supporters.'
 
 	for word in @Plugin.getSetting('blockedWords')
 		patterns.push new RegExp word, 'ig'

@@ -13,7 +13,7 @@ html
 		link(href='/css/mikuia.css', rel='stylesheet', type='text/css')
 		title=Mikuia.settings.bot.name
 	body(class=(path == '/' ? 'mikuia' : undefined))
-		nav.navbar.navbar-default.navbar-fixed-top.navbar-mikuia(role='navigation')
+		nav.navbar.navbar-default.navbar-fixed-top.navbar-mikuia.animation-fade-in-down(role='navigation')
 			.container
 				.navbar-header
 					a.navbar-brand(href='/')=Mikuia.settings.bot.name
@@ -36,14 +36,24 @@ html
 							a(href='/supporter')
 								i.fa.fa-money
 								|  Supporter
-						li(class=(path == '/stats' ? 'active' : undefined))
-							a(href='/stats')
-								i.fa.fa-line-chart
-								|  Stats
-						li(class=(path == '/leagues' ? 'active' : undefined))
-							a(href='/leagues')
+						li.dropdown(class=(path == '/leagues' ? 'active' : undefined))
+							a.dropdown-toggle(href='#', data-toggle='dropdown')
 								i.fa.fa-trophy
-								|  Leagues
+								|  Leagues 
+								span.caret
+							ul.dropdown-menu(role='menu')
+								li
+									a(href='/leagues') Your Rank
+								li
+									a(href='/leagues/leaderboards') Leaderboards
+						li(class=(path.indexOf('/slack') == 0 ? 'active' : undefined))
+							a(href='/slack')
+								i.fa.fa-slack
+								|  Slack
+						li
+							a(href='https://p.datadoghq.com/sb/AF-ona-ccd2288b29')
+								i.fa.fa-bar-chart
+								|  Status
 					if !user
 						ul.nav.navbar-nav.navbar-right.pull-right
 							li
@@ -65,7 +75,7 @@ html
 					if Mikuia.settings.bot.disableChat
 						p.navbar-text.navbar-right.navbar-alert #{Mikuia.settings.bot.name} is currently globally banned from the chat.
 		block content
-		.container
+		.container.animation-fade-in-up
 			hr
 			.row
 				.col-md-3

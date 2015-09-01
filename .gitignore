@@ -3,9 +3,11 @@ node_modules/
 plugins/keen
 plugins/nodebb
 plugins/paypal
+plugins/slack
 plugins/steam
 web/public/img/avatars/
 npm-debug.log
 settings.json
 sftp-config.json
 *.sublime-*
+web/public/img/flags

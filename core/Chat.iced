@@ -1,19 +1,22 @@
 cli = require 'cli-color'
-irc = require 'twitch-irc'
+irc = require 'tmi.js'
 RateLimiter = require('limiter').RateLimiter
+RollingLimiter = require 'rolling-rate-limiter'
 
 channelLimiter = {}
-joinLimiter = new RateLimiter 25, 10000
-messageLimiter = new RateLimiter 10, 30000
+channelTotalLimiter = {}
 
 class exports.Chat
-	constructor: (Mikuia) ->
-		@Mikuia = Mikuia
-
+	constructor: (@Mikuia) ->
 		@chatters = {}
+		@channelClients = {}
+		@clientJoins = {}
+		@clients = {}
 		@connected = false
 		@joined = []
+		@messageLimiter = null
 		@moderators = {}
+		@nextJoinClient = 0
 
 	broadcast: (message) =>
 		await Mikuia.Streams.getAll defer err, streams
@@ -21,69 +24,43 @@ class exports.Chat
 			@say stream, '.me broadcast: ' + message
 
 	connect: =>
-		@client = new irc.client
-			options:
-				debug: @Mikuia.settings.bot.debug
-				exitOnError: true
-			connection:
-				reconnect: true
-				retries: -1
-				serverType: 'chat'
-				preferredServer: @Mikuia.settings.bot.server
-			identity:
-				username: @Mikuia.settings.bot.name
-				password: @Mikuia.settings.bot.oauth
+		connections = Mikuia.settings.bot.connections
 
-		@client.connect()
+		if connections < 1
+			connections = 1
 
-		@client.addListener 'chat', (channel, user, message) =>
-			@handleMessage user, channel, message
+		setTimeout () =>
+			if !@connected
+				@Mikuia.Log.fatal cli.magenta('Twitch') + ' / ' + cli.whiteBright('Failed to connect to Twitch chat. Restarting...')
+		, connections * 10 * 1000
 
-		@client.addListener 'connected', (address, port) =>
-			@Mikuia.Log.info cli.magenta('Twitch') + ' / ' + cli.whiteBright('Connected to Twitch IRC (' + cli.yellowBright(address + ':' + port) + cli.whiteBright(')'))
-			@Mikuia.Events.emit 'twitch.connected'
-			@connected = true
-			@update()
+		for i in [0..(connections - 1)]
+			await @spawnConnection i, defer err, client
+			@clients[i] = client
+			@clientJoins[i] = []
 
-		@client.addListener 'disconnected', (reason) =>
-			@Mikuia.Log.fatal cli.magenta('Twitch') + ' / ' + cli.whiteBright('Disconnected from Twitch IRC. Reason: ' + reason)
+		@joinLimiter = RollingLimiter
+			interval: 10000
+			maxInInterval: 49
+			namespace: 'mikuia:join:limiter'
+			redis: Mikuia.Database		
 
-		@client.addListener 'join', (channel, username) =>
-			if username == @Mikuia.settings.bot.name.toLowerCase()
-				Channel = new Mikuia.Models.Channel channel
-				await
-					Channel.getDisplayName defer err, displayName
-					Channel.isSupporter defer err, isSupporter
+		@messageLimiter = RollingLimiter
+			interval: 30000
+			maxInInterval: 19
+			namespace: 'mikuia:chat:limiter:'
+			redis: Mikuia.Database		
 
-				if isSupporter
-					channelLimiter[Channel.getName()] = new RateLimiter 4, 30000
-					rateLimitingProfile = cli.redBright 'Supporter (4 per 30s)'
-				else
-					channelLimiter[Channel.getName()] = new RateLimiter 3, 30000
-					rateLimitingProfile = cli.greenBright 'Free (3 per 30s)'
+		@parseQueue()
 
-				@Mikuia.Log.info cli.cyan(displayName) + ' / ' + cli.whiteBright('Joined the IRC channel. Rate Limiting Profile: ') + rateLimitingProfile
-
-
-		@client.addListener 'part', (channel, username) =>
-			if username == @Mikuia.settings.bot.name.toLowerCase()
-				Channel = new Mikuia.Models.Channel channel
-				await Channel.getDisplayName defer err, displayName
-
-				delete channelLimiter[Channel.getName()]
-				@Mikuia.Log.info cli.cyan(displayName) + ' / ' + cli.whiteBright('Left the IRC channel.')
-
-		@client.addListener 'reconnect', =>
-			@connected = false
-			@joined = []
-
-	getChatters: (channel) =>
-		return @chatters[channel]
+	getChatters: (channel) => @chatters[channel]
 
 	handleMessage: (user, to, message) =>
 		Channel = new @Mikuia.Models.Channel to
 		Chatter = new @Mikuia.Models.Channel user.username
-		await Channel.getDisplayName defer err, displayName
+		await
+			Channel.getDisplayName defer err, displayName
+			Chatter.isBanned defer err, isBanned
 
 		chatterUsername = cli.yellowBright user.username
 
@@ -93,14 +70,16 @@ class exports.Chat
 		if Chatter.isModOf Channel.getName()
 			chatterUsername = cli.greenBright '[m] ' + chatterUsername
 
-		if user.special.indexOf('subscriber') > -1
+		if user.subscriber
 			chatterUsername = cli.blueBright '[s] ' + chatterUsername
 
 		if message.toLowerCase().indexOf(Mikuia.settings.bot.name.toLowerCase()) > -1 || message.toLowerCase().indexOf(Mikuia.settings.bot.admin) > -1
-			@Mikuia.Log.info cli.bgBlackBright(cli.cyan(displayName) + ' / ' + chatterUsername + ': ' + cli.red(message))
+			@Mikuia.Log.info cli.cyanBright('[' + @channelClients['#' + Channel.getName()] + ']') + ' / ' + cli.bgBlackBright(cli.cyan(displayName) + ' / ' + chatterUsername + ': ' + cli.red(message))
 		else
-			@Mikuia.Log.info cli.cyan(displayName) + ' / ' + chatterUsername + ': ' + cli.whiteBright(message)
-		@Mikuia.Events.emit 'twitch.message', user, to, message
+			@Mikuia.Log.info cli.cyanBright('[' + @channelClients['#' + Channel.getName()] + ']') + ' / ' + cli.cyan(displayName) + ' / ' + chatterUsername + ': ' + cli.whiteBright(message)
+
+		if !isBanned
+			@Mikuia.Events.emit 'twitch.message', user, to, message
 
 		Channel.trackIncrement 'messages', 1
 
@@ -119,12 +98,12 @@ class exports.Chat
 		{command, settings, isAllowed} = o
 
 		# abort if there's an error, access denied or no command
-		return if err || !isAllowed || !command?
+		return if err || !isAllowed || isBanned || !command?
 
 		handler = @Mikuia.Plugin.getHandler command
 		await Channel.isPluginEnabled handler.plugin, defer err, enabled
 
-		if !err && enabled
+		if !err and enabled and !isBanned 
 			if settings?._coinCost and settings._coinCost > 0
 				User = new Mikuia.Models.Channel user.username
 
@@ -141,14 +120,39 @@ class exports.Chat
 		if channel.indexOf('#') == -1
 			channel = '#' + channel
 
-		Channel = new Mikuia.Models.Channel channel
-		await Channel.isEnabled defer err, isMember
+		if @nextJoinClient >= Mikuia.settings.bot.connections
+			@nextJoinClient = 0
 
-		if @joined.indexOf(channel) == -1 && isMember
-			joinLimiter.removeTokens 1, (err, rr) =>
-				@client.join channel
-				@joined.push channel
-				callback? false
+		Channel = new Mikuia.Models.Channel channel
+		await
+			Channel.isBanned defer err, isBanned
+			Channel.isEnabled defer err, isMember
+
+		if @joined.indexOf(channel) == -1 and isMember and !isBanned
+
+			await Mikuia.Database.zrangebyscore 'mikuia:join:limiter', '-inf', '+inf', defer err, limitEntries
+					
+			currentTime = (new Date).getTime() * 1000
+			remainingRequests = 49
+			
+			for limitEntry in limitEntries
+				if parseInt(limitEntry) + 15000000 > currentTime
+					remainingRequests--
+
+			if remainingRequests > 0
+				@joinLimiter '', (err, timeLeft) =>
+					if !timeLeft
+						@clients[@nextJoinClient].join channel
+						@joined.push channel
+						@clientJoins[@nextJoinClient].push channel
+						@channelClients[channel] = @nextJoinClient
+
+						@nextJoinClient++
+						callback? false
+					else
+						callback? true
+			else
+				callback? true
 		else
 			callback? true
 
@@ -162,41 +166,175 @@ class exports.Chat
 			await @updateChatters channel, defer whatever
 
 	mods: (channel) =>
-		channel = channel.replace('#', '')
-		if @moderators[channel]?
-			return @moderators[channel]
-		else
-			return null
+		@moderators[channel.replace('#', '')]
 
-	part: (channel, callback) =>
-		joinLimiter.removeTokens 1, (err, rr) =>
-			@client.part channel
+	parseQueue: =>
+		await Mikuia.Database.lpop 'mikuia:chat:queue', defer err, jsonData
+		if jsonData
+			data = JSON.parse jsonData
+
+			Channel = new Mikuia.Models.Channel data.channel
+			await Channel.getDisplayName defer err, displayName
+
+			if channelLimiter[Channel.getName()]? and @channelClients['#' + Channel.getName()]?
+				channelLimiter[Channel.getName()].removeTokens 1, (err, channelRR) =>
+					if channelRR > -1
+						await Mikuia.Database.zrangebyscore 'mikuia:chat:limiter:' + @channelClients['#' + Channel.getName()], '-inf', '+inf', defer err, limitEntries
+					
+						currentTime = (new Date).getTime() * 1000
+						remainingRequests = 19
+						
+						for limitEntry in limitEntries
+							if parseInt(limitEntry) + 30000000 > currentTime
+								remainingRequests--
+
+						if remainingRequests > 0
+							@messageLimiter @channelClients['#' + Channel.getName()], (err, timeLeft) =>
+								if !timeLeft
+									@clients[@channelClients['#' + Channel.getName()]].say data.channel, data.message.split('%%WORKER%%').join(@channelClients['#' + Channel.getName()])
+
+									Mikuia.Events.emit 'mikuia.say', data.channel, data.message
+
+									@Mikuia.Log.info cli.cyanBright('[' + @channelClients['#' + Channel.getName()] + ']') + ' / ' + cli.cyan(displayName) + ' / ' + cli.magentaBright(@Mikuia.settings.bot.name) + ' (' + cli.magentaBright(remainingRequests) + ') (' + cli.greenBright(Math.floor(channelRR)) + '): ' + data.message
+
+									@parseQueue()
+								else
+									await Mikuia.Database.lpush 'mikuia:chat:queue', jsonData, defer whatever
+									
+									setTimeout () =>
+										@parseQueue()
+									, 30000
+						else
+							#await Mikuia.Database.zrangebyscore 'mikuia:chat:limiter:' + channelClients[Channel.getName()], '-inf', '+inf', defer err, lastRequestTimes
+							#lastRequestTime = lastRequestTimes[0]
+							#currentTime = (new Date).getTime() * 1000
+							#waitTime = Math.floor((30000000 - (currentTime -  lastRequestTime)) / 1000)
+
+							setTimeout () =>
+								@parseQueue()
+							, 100
+
+					else
+						await Mikuia.Database.rpush 'mikuia:chat:queue', jsonData, defer whatever
+						setTimeout () =>
+							@parseQueue()
+						, 10
+
+			else
+				setTimeout () =>
+					@parseQueue()
+				, 10
+
+		else
+			setTimeout () =>
+				@parseQueue()
+			, 100
+
+	part: (channel) =>
+		if channel.indexOf('#') == -1
+			channel = '#' + channel
+
+		if @channelClients[channel]?
+			@clients[@channelClients[channel]].part channel
 			if @joined.indexOf(channel) > -1
 				@joined.splice @joined.indexOf(channel), 1
+			delete @channelClients[channel]
 
 	say: (channel, message) =>
 		if channel.indexOf('#') == -1
 			channel = '#' + channel
 		if message.indexOf('.') == 0 or message.indexOf('/') == 0
 			message = '!' + message.replace('.', '').replace('/', '')
-
+		
 		@sayUnfiltered channel, message
 
 	sayUnfiltered: (channel, message) ->
 		Channel = new Mikuia.Models.Channel channel
-		await Channel.getDisplayName defer err, displayName
 
-		lines = message.split '\\n'
-		for line in lines
-			if !Mikuia.settings.bot.disableChat && line.trim() != ''
-				messageLimiter.removeTokens 1, (err, twitchRR) =>
-					if channelLimiter[Channel.getName()]?
-							channelLimiter[Channel.getName()].removeTokens 1, (err, channelRR) =>
-								@client.say channel, line
-								@Mikuia.Log.info cli.cyan(displayName) + ' / ' + cli.magentaBright(@Mikuia.settings.bot.name) + ' (' + cli.magentaBright(Math.floor(twitchRR)) + ') (' + cli.greenBright(Math.floor(channelRR)) + '): ' + line
+		if channelTotalLimiter[Channel.getName()]
+			channelTotalLimiter[Channel.getName()].removeTokens 1, (err, remainingRequests) =>
+				if remainingRequests > -1
+					lines = message.split '\\n'
+					for line in lines
+						if !Mikuia.settings.bot.disableChat && line.trim() != ''
+
+							line = JSON.stringify
+								channel: channel
+								message: line
+							await Mikuia.Database.rpush 'mikuia:chat:queue', line, defer whatever
 
 	sayRaw: (channel, message) =>
-		@client.say channel, message
+		@clients[@channelClients[channel]].say channel, message
+
+	spawnConnection: (i, callback) =>
+		client = new irc.client
+			options:
+				debug: @Mikuia.settings.bot.debug
+			connection:
+				random: 'chat'
+				reconnect: true
+			identity:
+				username: @Mikuia.settings.bot.name
+				password: @Mikuia.settings.bot.oauth
+
+		client.id = i
+		client.connect()
+
+		client.addListener 'chat', (channel, user, message) =>
+			if user.username != @Mikuia.settings.bot.name.toLowerCase()
+				@handleMessage user, channel, message
+
+		client.addListener 'connected', (address, port) =>
+			@Mikuia.Log.info cli.cyanBright('[' + client.id + ']') + ' / ' + cli.magenta('Twitch') + ' / ' + cli.whiteBright('Connected to Twitch chat (' + cli.yellowBright(address + ':' + port) + cli.whiteBright(')'))
+
+			client.raw 'CAP REQ :twitch.tv/membership'
+			client.raw 'CAP REQ :twitch.tv/commands'
+			client.raw 'CAP REQ :twitch.tv/tags'
+
+			if client.id == Mikuia.settings.bot.connections - 1
+				@Mikuia.Events.emit 'twitch.connected'
+				@connected = true
+				@update()
+
+			callback false, client
+
+		client.addListener 'disconnected', (reason) =>
+			@Mikuia.Log.fatal cli.cyanBright('[' + client.id + ']') + ' / ' + cli.magenta('Twitch') + ' / ' + cli.whiteBright('Disconnected from Twitch chat. Reason: ' + reason)
+
+		client.addListener 'join', (channel, username) =>
+			if username == @Mikuia.settings.bot.name.toLowerCase()
+				Channel = new Mikuia.Models.Channel channel
+				await
+					Channel.getDisplayName defer err, displayName
+					Channel.isSupporter defer err, isSupporter
+
+				if isSupporter
+					channelLimiter[Channel.getName()] = new RateLimiter 5, 30000, true
+					channelTotalLimiter[Channel.getName()] = new RateLimiter 10, 30000, true
+					rateLimitingProfile = cli.redBright 'Supporter (5 per 30s)'
+				else
+					channelLimiter[Channel.getName()] = new RateLimiter 3, 30000, true
+					channelTotalLimiter[Channel.getName()] = new RateLimiter 6, 30000, true
+					rateLimitingProfile = cli.greenBright 'Free (3 per 30s)'
+
+				@Mikuia.Log.info cli.cyanBright('[' + client.id + ']') + ' / ' + cli.cyan(displayName) + ' / ' + cli.whiteBright('Joined the channel. Rate Limiting Profile: ') + rateLimitingProfile
+
+		client.addListener 'notice', (channel, noticeId, params) =>
+			if noticeId == 'msg_banned' || noticeId == 'msg_timedout'
+				Channel = new Mikuia.Models.Channel channel
+				await Channel.getDisplayName defer err, displayName
+
+				@Mikuia.Log.info cli.cyanBright('[' + client.id + ']') + ' / ' + cli.magenta('Twitch') + ' / ' + cli.whiteBright('Banned or timed out on ' + cli.greenBright(displayName) + cli.whiteBright('.'))
+				@Mikuia.Events.emit 'twitch.banned', channel
+
+		client.addListener 'part', (channel, username) =>
+			if username == @Mikuia.settings.bot.name.toLowerCase()
+				Channel = new Mikuia.Models.Channel channel
+				await Channel.getDisplayName defer err, displayName
+
+				delete channelLimiter[Channel.getName()]
+				delete channelTotalLimiter[Channel.getName()]
+				@Mikuia.Log.info cli.cyanBright('[' + client.id + ']') + ' / ' + cli.cyan(displayName) + ' / ' + cli.whiteBright('Left the channel.')
 
 	update: =>
 		twitchFailure = false
@@ -231,7 +369,9 @@ class exports.Chat
 
 							await Channel.isSupporter defer err, isSupporter
 							if isSupporter
-								Channel.trackValue 'supporterValue', Math.floor(Math.random() * 10000)
+								Channel.trackValue 'supporterValue', Math.floor(Math.random() * 10000) + 1
+							else
+								Channel.trackValue 'supporterValue', 0
 
 						@Mikuia.Log.info cli.magenta('Twitch') + ' / ' + cli.whiteBright('Obtained live channels... (' + chunkList.length + ')')
 						await @Mikuia.Chat.joinMultiple joinList, defer uselessfulness
@@ -245,9 +385,11 @@ class exports.Chat
 					@Mikuia.Database.sadd 'mikuia:streams', stream.channel.name, defer err, whatever
 
 					things = [
+						'broadcaster_language'
 						'display_name'
 						'followers'
 						'game'
+						'language'
 						'logo'
 						'mature'
 						'profile_banner'
@@ -256,7 +398,8 @@ class exports.Chat
 					]
 
 					for thing in things
-						@Mikuia.Database.hset 'mikuia:stream:' + stream.channel.name, thing, stream.channel[thing], defer err, whatever
+						if stream.channel[thing]? and stream.channel[thing]
+							@Mikuia.Database.hset 'mikuia:stream:' + stream.channel.name, thing, stream.channel[thing], defer err, whatever
 
 					@Mikuia.Database.hset 'mikuia:stream:' + stream.channel.name, 'created_at', stream.created_at, defer err, whatever
 					@Mikuia.Database.hset 'mikuia:stream:' + stream.channel.name, 'preview', stream.preview.medium, defer err, whatever

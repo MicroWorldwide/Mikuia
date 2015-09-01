@@ -1,3 +1,6 @@
+fs = require 'fs'
+jade = require 'jade'
+
 module.exports =
 	commands: (req, res) ->
 		Channel = new Mikuia.Models.Channel req.user.username
@@ -27,8 +30,11 @@ module.exports =
 			# To do: maybe some validation, I dunno.
 			commandName = data.command.split(' ').join('')
 
-			await Channel.addCommand commandName, data.handler, defer err, data
-			res.redirect '/dashboard/commands/settings/' + commandName
+			if commandName? and commandName != ''
+				await Channel.addCommand commandName, data.handler, defer err, data
+				res.redirect '/dashboard/commands/settings/' + commandName
+			else
+				res.redirect '/dashboard/commands'
 		else
 			res.redirect '/dashboard/commands'
 
@@ -81,15 +87,23 @@ module.exports =
 		settings = null
 		userSettings = null
 		if req.params.name?
-			await Channel.getCommand req.params.name, defer err, data
-			if !err && data? && Mikuia.Plugin.handlerExists data
-				if Mikuia.Plugin.getHandler(data).settings?
-					settings = Mikuia.Plugin.getHandler(data).settings
-				await Channel.getCommandSettings req.params.name, false, defer err, data
-				if !err && data?
-					userSettings = data
+			await Channel.getCommand req.params.name, defer err, handlerName
+
+			if !err && handlerName? && Mikuia.Plugin.handlerExists handlerName
+				if Mikuia.Plugin.getHandler(handlerName).settings?
+					settings = Mikuia.Plugin.getHandler(handlerName).settings
+				await Channel.getCommandSettings req.params.name, false, defer err, commandSettingData
+				if !err && commandSettingData?
+					userSettings = commandSettingData
+			
+			guide = null
+			await fs.readFile 'plugins/' + Mikuia.Plugin.getHandler(handlerName).plugin + '/guides/' + handlerName + '.jade', defer err, guideFile
+			if !err
+				guide = jade.render guideFile
 
 			res.render 'command',
 				command: req.params.name
+				guide: guide
+				handlerName: handlerName
 				settings: settings
 				userSettings: userSettings

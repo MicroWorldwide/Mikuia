@@ -57,7 +57,8 @@ mixin setting(setting, settingName, userSettings)
 								.form-control-focus
 						span.help-block
 							| #{setting.description} 
-							a(href='#', onclick="jQuery('.list[name=\"" + settingName + "\"]').toggle(); return false;") Need help?
+							a(href='#', onclick="jQuery('.list[name=\"" + settingName + "\"]').toggle(); return false;", data-placement='bottom', rel='tooltip', title='Need help?')
+								i.fa.fa-question-circle
 						span.list(id=settingName, name=settingName, style='display: none;')
 							br
 							br
@@ -76,14 +77,14 @@ mixin setting(setting, settingName, userSettings)
 										p You can even use multiple functions for some reason.
 										pre <%function1/function2/function3/variable%>
 								.row
-									small.col-sm-6
+									small.col-md-12
 										h3 Variables
 										table.table.table-condensed.text-muted
 											each variable, name in setting.variables
 												tr
 													td=variable
 													td <%#{name}%>
-									small.col-sm-5.col-sm-offset-1
+									small.col-md-12
 										h3 Functions
 										table.table.table-condensed.text-muted
 											tr
@@ -115,6 +116,16 @@ mixin setting(setting, settingName, userSettings)
 											tr
 												td upper
 												td Uppercases the text.
+											tr
+												td
+													h4 Dates
+												td
+											tr
+												td countdown
+												td Short, precise amount of difference in time (e.g. 5h 3m)
+											tr
+												td timeago
+												td Relative time of the event (e.g. 5 minutes ago)
 					when 'number'
 						if userSettings && userSettings[settingName]
 							input.form-control(type='number', id=settingName, name=settingName, placeholder=setting.default, value=userSettings[settingName])

@@ -73,21 +73,28 @@ app.use (req, res, next) ->
 	res.locals.path = req.path
 	res.locals.user = req.user
 
+	isBanned = false
 	pages = []
-	if req.user && req.path.indexOf('/dashboard') == 0
+	if req.user
 		Channel = new Mikuia.Models.Channel req.user.username
-		pagePlugins = Mikuia.Element.getAll 'dashboardPagePlugin'
-		for pagePlugin in pagePlugins || []
-			await Channel.isPluginEnabled pagePlugin.plugin, defer err, enabled
-			if !err && enabled
-				for pagePath, {name, icon} of pagePlugin.pages
-					pages.push {
-						name, icon,
-						path: '/dashboard/plugins/' + pagePlugin.plugin + pagePath
-					}
+		await Channel.isBanned defer err, isBanned
 
-	res.locals.pages = pages
-	next()
+		if !isBanned and req.path.indexOf('/dashboard') == 0
+			pagePlugins = Mikuia.Element.getAll 'dashboardPagePlugin'
+			for pagePlugin in pagePlugins || []
+				await Channel.isPluginEnabled pagePlugin.plugin, defer err, enabled
+				if !err && enabled
+					for pagePath, {name, icon} of pagePlugin.pages
+						pages.push {
+							name, icon,
+							path: '/dashboard/plugins/' + pagePlugin.plugin + pagePath
+						}
+
+	if !isBanned
+		res.locals.pages = pages
+		next()
+	else
+		res.send 'This account ("' + req.user.username + '") has been permanently banned from using Mikuia.'
 
 fs.mkdirs 'web/public/img/avatars'
 
@@ -120,6 +127,8 @@ app.get '/leagues/leaderboards', routes.community.leagueleaderboards
 app.get '/levels', routes.community.levels
 app.get '/levels/:userId', routes.community.levels
 app.get '/mlvl', routes.community.mlvl
+app.get '/slack', routes.community.slack
+app.post '/slack/invite', routes.community.slackInvite
 app.get '/stats', routes.community.stats
 app.get '/streams', routes.community.streams
 app.get '/supporter', routes.community.support
@@ -170,7 +179,7 @@ app.listen Mikuia.settings.web.port
 
 updateGithub = (callback) =>
 	request 
-		url: 'https://api.github.com/repos/Maxorq/Mikuia/commits'
+		url: 'https://api.github.com/repos/Mikuia/Mikuia/commits'
 		headers: 
 			'User-Agent': 'Mikuia/0.0.0.0.1'
 	, (error, response, body) =>
@@ -194,9 +203,11 @@ updateGithub = (callback) =>
 						commit.commit.message = commit.commit.message.replace '[coins]', '<span class="label label-warning">coins</span>'
 						commit.commit.message = commit.commit.message.replace '[fun]', '<span class="label label-primary">fun</span>'
 						commit.commit.message = commit.commit.message.replace '[levels]', '<span class="label label-warning">levels</span>'
+						commit.commit.message = commit.commit.message.replace '[lol]', '<span class="label label-warning">lol</span>'
 						commit.commit.message = commit.commit.message.replace '[mod]', '<span class="label label-danger">mod</span>'
 						commit.commit.message = commit.commit.message.replace '[osu]', '<span class="label label-warning">osu</span>'
 						commit.commit.message = commit.commit.message.replace '[rotmg]', '<span class="label label-warning">rotmg</span>'
+						commit.commit.message = commit.commit.message.replace '[twitch]', '<span class="label label-info">twitch</span>'
 						commit.commit.message = commit.commit.message.replace '[web]', '<span class="label label-info">web</span>'
 						commit.commit.message = commit.commit.message.replace '[wow]', '<span class="label label-warning">wow</span>'
 				

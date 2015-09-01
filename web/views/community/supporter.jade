@@ -4,11 +4,11 @@ block content
 	.splash.bg-material-light-green
 		.container
 			.row
-				.col-md-12
+				.col-md-12.animation-fade-in-right
 					h1 Supporter
 	.container
 		.row
-			.col-md-9
+			.col-md-9.animation-fade-in-right
 				
 				h1 Well, hello there!
 				h4
@@ -28,6 +28,7 @@ block content
 					i.fa.fa-star-o
 					|  Features
 
+				br
 				.col-md-6
 					h3.text-warning
 						i.fa.fa-star-o
@@ -61,13 +62,6 @@ block content
 						| Your rate limits on the chat will be slightly higher, letting your viewers use commands with a shorter delay.
 
 					br
-					h3.text-primary
-						i.fa.fa-line-chart
-						|  Viewer & Chatter Graphs
-					p.text-muted
-						| Check your viewership stats from last 24 hours directly on Mikuia Dashboard.
-
-					br
 					h3(style='color: #FC74B0;')
 						i.fa.fa-thumbs-down
 						|  (osu!) In-Game Twitch Chat Moderation
@@ -76,12 +70,12 @@ block content
 						br
 						| Examples: !ban, !slow, !subscribers, !timeout, !unban (!host / !unhost require you to set Mikuia as an editor of your channel)
 
-			.col-md-3
+			.col-md-3.animation-fade-in-left
 				form(action='https://www.paypal.com/cgi-bin/webscr', method='post', role='form')
 					.panel.panel-default
 						.panel-heading Buy Supporter
 						.panel-body
-								input(type='hidden', name='business', value='psqmaxor@gmail.com')
+								input(type='hidden', name='business', value='psqmaxor+paypal@gmail.com')
 								input(type='hidden', name='charset', value='UTF-8')
 								input(type='hidden', name='cmd', value='_xclick')
 								input(type='hidden', name='currency_code', value='USD')

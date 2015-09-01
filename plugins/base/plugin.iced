@@ -36,7 +36,32 @@ Mikuia.Events.on 'base.add.dummy', (data) =>
 	addDummy data.user.username, data.to, data.tokens
 
 Mikuia.Events.on 'base.dummy', (data) =>
-	Mikuia.Chat.say data.to, data.settings.message
+	args = data.tokens.slice(1, data.tokens.length).join ' '
+
+	Channel = new Mikuia.Models.Channel data.to
+	Viewer = new Mikuia.Models.Channel data.user.username
+	await
+		Channel.getSetting 'base', 'dummyCustomFormat', defer err, dummyCustomFormat
+		Channel.getSetting 'base', 'dummyCustomMessage', defer err, dummyCustomMessage
+		Viewer.getDisplayName defer err, viewerDisplayName
+
+	dummyMessage = Mikuia.Format.parse data.settings.message,
+		args: args
+		color: data.user.color
+		displayName: viewerDisplayName
+		message: data.message
+		username: data.user.username
+
+	if dummyCustomFormat
+		dummyMessage = Mikuia.Format.parse dummyCustomMessage,
+			args: args
+			color: data.user.color
+			displayName: viewerDisplayName
+			dummyMessage: dummyMessage
+			message: data.message
+			username: data.user.username
+
+	Mikuia.Chat.say data.to, dummyMessage
 
 Mikuia.Events.on 'base.levels', (data) =>
 	Channel = new Mikuia.Models.Channel data.user.username
@@ -87,7 +112,7 @@ Mikuia.Events.on 'twitch.message', (from, to, message) =>
 	globalCommand = @Plugin.getSetting 'globalCommand'
 	if message.indexOf(globalCommand) == 0
 		if message.trim() == globalCommand
-			Mikuia.Chat.say to, 'Hey, I\'m Mikuia, and I\'m a bot made by Maxorq / Hatsuney! Learn more about me at http://mikuia.tv'
+			Mikuia.Chat.say to, 'Hey, I\'m Mikuia, and I\'m a bot made by Hatsuney! Learn more about me at http://mikuia.tv'
 		else
 			tokens = message.trim().split ' '
 			trigger = tokens[1]
@@ -101,6 +126,8 @@ Mikuia.Events.on 'twitch.message', (from, to, message) =>
 				isMod = true
 				
 			switch trigger
+				when 'commands'
+					Mikuia.Chat.say to, 'Commands for this channel: http://mikuia.tv/user/' + Channel.getName()
 				when 'dummy'
 					addDummy from.username, to, tokens.slice 1
 				when 'emit'
@@ -163,11 +190,13 @@ Mikuia.Events.on 'twitch.message', (from, to, message) =>
 				when 'say'
 					if isAdmin
 						Mikuia.Chat.sayUnfiltered to, tokens.slice(2).join(' ')
+				when 'status'
+					Mikuia.Chat.say to, 'Current Mikuia status: https://p.datadoghq.com/sb/AF-ona-ccd2288b29'
 				else
 					# do nothing
 
 checkMod = (channel, username) ->
-	if channel == username
+	if channel == '#' + username
 		return true
 	else
 		moderators = Mikuia.Chat.mods channel

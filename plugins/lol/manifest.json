@@ -1,0 +1,131 @@
+{
+	"name": "League of Legends",
+	"description": "Some LoL stuff",
+	"baseFile": "plugin.iced",
+	"hidden": false,
+	"handlers": {
+		"lol.league.summary": {
+			"description": "Provides info about current leagues and rank.",
+			"settings": {
+				"format": {
+					"name": "Message Format",
+					"description": "Message format.",
+					"default": "<%tier%> <%division%> - <%leaguePoints%> LP (<%wins%> won, <%losses%> lost)",
+					"type": "format",
+					"variables": {
+						"tier": "Solo Queue tier",
+						"division": "Solo Queue division",
+						"leaguePoints": "Solo Queue League Points",						
+						"wins": "Wins",
+						"losses": "Losses",
+						"winRatio": "Win Ratio"
+					}
+				}
+			}
+		},
+		"lol.masteries.active.summary": {
+			"description": "Shows a summary of the currently used mastery page.",
+			"settings": {
+				"format": {
+					"name": "Message Format",
+					"description": "Message format.",
+					"default": "<%pageName%>: <%offensePoints%>/<%defensePoints%>/<%utilityPoints%>",
+					"type": "format",
+					"variables": {
+						"pageName": "Mastery page name",
+						"offensePoints": "Offense tree points",
+						"defensePoints": "Defense tree points",
+						"utilityPoints": "Utility tree points"
+					}
+				}
+			}
+		},
+		"lol.runes.active.list": {
+			"description": "Shows a list of currently used runes."
+		},
+		"lol.stats.ranked.champion": {
+			"description": "Shows ranked stats for a particular champion.",
+			"settings": {
+				"format": {
+					"name": "Message Format",
+					"description": "Message format.",
+					"default": "<%championName%>: <%round2/kdaRatio%> KDA (<%totalChampionKills%>/<%totalDeathsPerSession%>/<%totalAssists%>).",
+					"type": "format",
+					"variables": {
+						"championName": "Champion Name",
+						"kdRatio": "K/D Ratio",
+						"kdaRatio": "(K+A)/D Ratio",
+						"winRatio": "Win Ratio",
+						"totalSessionsPlayed": "Matches played",
+						"totalSessionsLost": "Matches lost",
+						"totalSessionsWon": "Matches won",
+						"totalChampionKills": "Total kills",
+						"totalDeathsPerSession": "Total deaths",
+						"totalAssists": "Total assists",
+						"mostChampionKillsPerSession": "Most kills in a match",
+						"maxNumDeaths": "Most deaths in a match",
+						"totalMinionKills": "Minion kills",
+						"totalFirstBlood": "First Bloods",
+						"totalDoubleKills": "Double Kills",
+						"totalTripleKills": "Triple Kills",
+						"totalQuadraKills": "Quadra Kills",
+						"totalPentaKills": "Penta Kills",
+						"totalUnrealKills": "Unreal Kills",
+						"totalGoldEarned": "Total gold earned",
+						"mostSpellsCast": "Most spells casted in a match",
+						"totalTurretsKilled": "Total turret kills",
+						"totalDamageDealt": "Damage dealt",
+						"totalDamageTaken": "Damage taken",
+						"totalPhysicalDamageDealt": "Physical damage dealt",
+						"totalMagicDamageDealt": "Magic damage dealt",
+						"maxChampionsKilled": "Most kills in a match"
+					}
+				}
+			}
+		}
+	},
+	"settings": {
+		"channel": {
+			"region": {
+				"name": "Region",
+				"category": "Account Details",
+				"description": "The region you play on.",
+				"default": "euw",
+				"type": "select",
+				"options": {
+					"br": "Brazil",
+					"eune": "Europe Nordic & East",
+					"euw": "Europe West",
+					"kr": "Korea",
+					"lan": "Latin America North",
+					"las": "Latin America South",
+					"na": "North America",
+					"oce": "Oceania",
+					"ru": "Russia",
+					"tr": "Turkey",
+					"pbe": "Public Beta Environment"
+				}
+			},
+			"name": {
+				"name": "Summoner Name",
+				"category": "Account Details",
+				"description": "The name of your summoner.",
+				"default": "",
+				"type": "text"
+			}
+		},
+		"server": {
+			"apiKey": "API_KEY_HERE",
+			"rateLimit": [
+				{
+					"time": 10,
+					"limit": 10
+				},
+				{
+					"time": 600,
+					"limit": 500
+				}
+			]
+		}
+	}
+}

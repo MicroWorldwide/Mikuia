@@ -81,7 +81,7 @@ module.exports =
 				featuredStream.name = featuredStream.display_name
 
 				if isSupporter
-					featuredStream.display_name = '❤' + featuredStream.display_name
+					featuredStream.display_name = '❤ ' + featuredStream.display_name
 
 		await Mikuia.Element.preparePanels 'community.index', defer panels
 
@@ -148,7 +148,7 @@ module.exports =
 				if exists
 					await Channel.getDisplayName defer err, displayName
 					await Channel.getProfileBanner defer err, profileBanner
-					await Mikuia.Database.zrevrange 'levels:' + req.params.userId + ':experience', 0, 99, 'withscores', defer err, ranks
+					await Mikuia.Database.zrevrange 'levels:' + Channel.getName() + ':experience', 0, 99, 'withscores', defer err, ranks
 
 					channels = Mikuia.Tools.chunkArray ranks, 2
 					displayNames = {}
@@ -170,8 +170,8 @@ module.exports =
 					if req.isAuthenticated()
 						channel = new Mikuia.Models.Channel req.user.username
 						await
-							channel.getExperience req.params.userId, defer err, experience
-							Mikuia.Database.zrevrank 'levels:' + req.params.userId + ':experience', req.user.username, defer err, rank
+							channel.getExperience Channel.getName(), defer err, experience
+							Mikuia.Database.zrevrank 'levels:' + Channel.getName() + ':experience', req.user.username, defer err, rank
 
 					res.render 'community/levelsUser',
 						channels: channels
@@ -282,6 +282,34 @@ module.exports =
 			logos: logos
 			rank: rank + 1
 
+	slack: (req, res) ->
+		totalLevel = 0
+
+		if req.isAuthenticated()
+			Channel = new Mikuia.Models.Channel req.user.username
+			await Channel.getTotalLevel defer err, totalLevel
+
+		res.render 'community/slack',
+			totalLevel: totalLevel
+
+	slackInvite: (req, res) ->
+		totalLevel = 0
+
+		if req.isAuthenticated()
+			Channel = new Mikuia.Models.Channel req.user.username
+			await Channel.getTotalLevel defer err, totalLevel
+
+			if req.user.email? and totalLevel >= 10
+				Mikuia.Tools.inviteToSlack req.user.email, req.user.displayName
+
+				res.render 'community/slackInvite'
+			else
+				res.render 'community/error',
+					error: 'Something went wrong...'
+		else
+			res.render 'community/error',
+				error: 'You are not logged in.'
+
 	stats: (req, res) ->
 		res.render 'community/stats'
 
@@ -324,7 +352,7 @@ module.exports =
 				if exists
 
 					channel =
-						name: req.params.userId
+						name: Channel.getName()
 					displayNames = {}
 					ranks = {}
 
@@ -337,7 +365,11 @@ module.exports =
 						Channel.getEnabledPlugins defer err, channel.plugins
 						Channel.getLogo defer err, channel.logo
 						Channel.getProfileBanner defer err, channel.profileBanner
+						Channel.getSetting 'coins', 'name', defer err, coinName
+						Channel.getSetting 'coins', 'namePlural', defer err, coinNamePlural
 						Channel.getTotalLevel defer err, channel.level
+						Channel.isBanned defer err, channel.isBanned
+						Channel.isBot defer err, channel.isBot
 						Channel.isLive defer err, channel.isLive
 
 					channel.commands = []
@@ -350,8 +382,9 @@ module.exports =
 						description = Mikuia.Plugin.getHandler(commands[command]).description
 						codeText = false
 
+						await Channel.getCommandSettings command, true, defer err, settings
+
 						if commands[command] == 'base.dummy'
-							await Channel.getCommandSettings command, true, defer err, settings
 							description = settings.message
 							codeText = true
 						
@@ -359,15 +392,19 @@ module.exports =
 							name: command
 							description: description
 							plugin: Mikuia.Plugin.getManifest(Mikuia.Plugin.getHandler(commands[command]).plugin).name
+							settings: settings
+							coin:
+								coinName: coinName
+								coinNamePlural: coinNamePlural
 							codeText: codeText
 
 					if channel.isLive
-						await Mikuia.Streams.get req.params.userId, defer err, channel.stream
+						await Mikuia.Streams.get Channel.getName(), defer err, channel.stream
 
 					for data in channel.experience
 						chan = new Mikuia.Models.Channel data[0]
 						await chan.getDisplayName defer err, displayNames[data[0]]
-						await Mikuia.Database.zrevrank 'levels:' + data[0] + ':experience', req.params.userId, defer err, ranks[data[0]]
+						await Mikuia.Database.zrevrank 'levels:' + data[0] + ':experience', Channel.getName(), defer err, ranks[data[0]]
 					
 					for name, rank of ranks
 						ranks[name]++
@@ -377,11 +414,14 @@ module.exports =
 						if channel.plugins.indexOf(element.plugin) > -1
 							splashButtons = splashButtons.concat element
 
-					for element in splashButtons
-						for button in element.buttons
+					for element, i in splashButtons
+						for button, j in element.buttons
 							if button.setting?
 								await Channel.getSetting element.plugin, button.setting, defer err, value
-								button.link = button.linkFunction value
+								if value
+									button.link = button.linkFunction value
+								else
+									button.link = false
 
 					if req.params.subpage?
 						if req.params.subpage == 'levels'

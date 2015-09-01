@@ -7,6 +7,7 @@ defaultSettings =
 		admins: [
 			'hatsuney'
 		]
+		connections: 2
 		debug: false
 		disableChat: false
 		name: 'YourBotNameHere'
@@ -22,6 +23,9 @@ defaultSettings =
 	sentry:
 		enable: false
 		dsn: 'https://username:password@app.getsentry.com/id'
+	slack:
+		channel: 'SLACK_CHANNEL_ID'
+		token: 'SLACK_TOKEN_FOR_INVITES'
 	twitch:
 		callbackURL: 'http://127.0.0.1:2912/auth/twitch/callback'
 		key: 'TWITCH_API_KEY'
@@ -32,8 +36,7 @@ defaultSettings =
 		port: 5587
 
 class exports.Settings
-	constructor: (Mikuia) ->
-		@Mikuia = Mikuia
+	constructor: (@Mikuia) ->
 
 	pluginGet: (plugin, key) ->
 		@Mikuia.settings.plugins[plugin]?[key] ? @Mikuia.Plugin.getManifest(plugin)?.settings?.server?[key]
@@ -55,9 +58,9 @@ class exports.Settings
 					@Mikuia.Log.success cli.whiteBright('Mikuia') + ' / ' + cli.whiteBright('Loaded settings from settings.json.')
 				catch e
 				 	@Mikuia.Log.fatal cli.whiteBright('Mikuia') + ' / ' + cli.whiteBright('Failed to parse settings.json file: ' + e + ' (if you want to generate a default file, delete it)')
-          
+
 			callback settingsErr
-	
+
 	save: ->
 		fs.writeFileSync 'settings.json', JSON.stringify @Mikuia.settings, null, '\t'
 
